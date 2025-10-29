@@ -63,3 +63,48 @@ python scripts/test_f2f_connection.py AA:BB:CC:DD:EE:FF --aggressive
 - Connection attempt progress
 - Device information if successful
 - Detailed troubleshooting tips if failed
+
+## create_copilot_dlc.py
+
+Documentation and guide for creating custom DLC files with the GitHub Copilot logo.
+
+**Usage:**
+```bash
+python scripts/create_copilot_dlc.py
+```
+
+**What it provides:**
+- Comprehensive guide to DLC file creation
+- Documentation on Furby's DLC format
+- Instructions for uploading DLC files
+- Links to relevant resources and tools
+
+**Purpose:**
+This script serves as documentation rather than a working DLC generator. Creating
+functional Furby DLC files requires understanding the proprietary format, including:
+- GeneralPlus A1800 audio codec
+- Furby's custom 64-color LCD palette
+- Action sequence definitions
+- Proper file structure
+
+**Current capabilities:**
+✓ Explains the DLC creation process
+✓ Documents upload procedures via CLI, API, and Web UI
+✓ Provides community resources
+✓ Outlines requirements for DLC generation
+
+**To upload existing DLC files:**
+```bash
+# Via CLI
+python -m pyfluff.cli upload-dlc file.dlc --slot 2
+python -m pyfluff.cli load-dlc 2
+python -m pyfluff.cli activate-dlc
+
+# Via Web UI  
+python -m pyfluff.server
+# Then open http://localhost:8080 and use DLC Management section
+```
+
+**Contributing:**
+If you're interested in reverse engineering the DLC format or creating DLC
+generation tools, see the guide for information on how to contribute!
