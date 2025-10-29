@@ -13,9 +13,14 @@ function log(message, type = 'info') {
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
     logDiv.insertBefore(entry, logDiv.firstChild);
     
-    // Keep only last 50 entries
-    while (logDiv.children.length > 50) {
-        logDiv.removeChild(logDiv.lastChild);
+    // Keep only last 50 entries - batch remove for better performance
+    const maxEntries = 50;
+    if (logDiv.children.length > maxEntries) {
+        // Use DocumentFragment to batch DOM operations
+        const toRemove = logDiv.children.length - maxEntries;
+        for (let i = 0; i < toRemove; i++) {
+            logDiv.removeChild(logDiv.lastChild);
+        }
     }
 }
 
@@ -48,6 +53,11 @@ async function loadKnownFurbies() {
     }
 }
 
+// WebSocket reconnection state
+let wsReconnectAttempts = 0;
+const WS_MAX_RECONNECT_DELAY = 30000; // Max 30 seconds
+const WS_INITIAL_RECONNECT_DELAY = 1000; // Start with 1 second
+
 // Connect to log WebSocket for real-time connection messages
 function connectLogWebSocket() {
     if (logWs && logWs.readyState === WebSocket.OPEN) {
@@ -60,6 +70,16 @@ function connectLogWebSocket() {
     
     logWs.onopen = () => {
         log('Ready for connection', 'info');
+        wsReconnectAttempts = 0; // Reset reconnect attempts on success
+        
+        // Send periodic keepalive pings to prevent idle timeout
+        const keepAliveInterval = setInterval(() => {
+            if (logWs && logWs.readyState === WebSocket.OPEN) {
+                logWs.send('ping');
+            } else {
+                clearInterval(keepAliveInterval);
+            }
+        }, 30000); // Ping every 30 seconds
     };
     
     logWs.onmessage = (event) => {
@@ -73,8 +93,18 @@ function connectLogWebSocket() {
     
     logWs.onclose = () => {
         logWs = null;
-        // Try to reconnect after 2 seconds
-        setTimeout(connectLogWebSocket, 2000);
+        // Exponential backoff with jitter for reconnection
+        wsReconnectAttempts++;
+        const backoffDelay = Math.min(
+            WS_INITIAL_RECONNECT_DELAY * Math.pow(2, wsReconnectAttempts - 1),
+            WS_MAX_RECONNECT_DELAY
+        );
+        // Add random jitter (±25%) to prevent thundering herd
+        const jitter = backoffDelay * 0.25 * (Math.random() - 0.5);
+        const delay = Math.floor(backoffDelay + jitter);
+        
+        log(`Reconnecting in ${(delay / 1000).toFixed(1)}s...`, 'info');
+        setTimeout(connectLogWebSocket, delay);
     };
 }
 

@@ -9,6 +9,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+import aiofiles
+
 from pyfluff.furby import FurbyConnect
 from pyfluff.protocol import FILE_CHUNK_SIZE, FileTransferMode, FurbyProtocol
 
@@ -72,8 +74,9 @@ class DLCManager:
         if not dlc_path.exists():
             raise FileNotFoundError(f"DLC file not found: {dlc_path}")
 
-        # Read DLC file
-        dlc_data = dlc_path.read_bytes()
+        # Read DLC file asynchronously
+        async with aiofiles.open(dlc_path, "rb") as f:
+            dlc_data = await f.read()
         file_size = len(dlc_data)
         filename = dlc_path.name
 
