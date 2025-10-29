@@ -7,8 +7,6 @@ for Furby Connect. Due to the complexity of the proprietary DLC format, this
 serves as a reference and starting point for the community.
 """
 
-import sys
-
 GUIDE_TEXT = """
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║          Creating a Copilot Logo DLC for Furby Connect                   ║
@@ -79,7 +77,7 @@ Via Web Interface:
 Via Python API:
   from pyfluff import FurbyConnect
   from pyfluff.dlc import DLCManager
-  
+
   async with FurbyConnect() as furby:
       dlc = DLCManager(furby)
       await dlc.upload_dlc(Path("copilot_logo.dlc"), slot=2)
@@ -125,7 +123,7 @@ Submit PRs or open issues to contribute!
 def main() -> None:
     """Display guide and exit."""
     print(GUIDE_TEXT)
-    
+
     print("\nQuick Commands:")
     print("  • Upload DLC:  python -m pyfluff.cli upload-dlc <file.dlc> --slot 2")
     print("  • Load DLC:    python -m pyfluff.cli load-dlc 2")
