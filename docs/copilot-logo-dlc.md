@@ -246,7 +246,9 @@ The DLC Management section in the web interface includes:
 - **Helpful Tips**: Links to documentation and tools
 - **Integration**: Works seamlessly with other Furby controls
 
-![DLC Management Interface](https://github.com/user-attachments/assets/6c589280-6751-432e-89c2-f0d03aa6a75c)
+![DLC Management Interface](../docs/images/dlc-management-ui.png)
+
+*The DLC Management section allows easy upload and management of custom DLC files*
 
 ## Safety Notes
 
