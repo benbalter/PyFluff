@@ -421,11 +421,33 @@ document.querySelectorAll('.mood-slider').forEach(slider => {
 });
 
 // DLC management
-// Commented out - DLC management UI is hidden
-/*
+// File selection
+document.getElementById('btn-select-dlc').addEventListener('click', () => {
+    document.getElementById('dlc-file').click();
+});
+
+document.getElementById('dlc-file').addEventListener('change', (event) => {
+    const fileInput = event.target;
+    const filenameSpan = document.getElementById('dlc-filename');
+    const uploadBtn = document.getElementById('btn-upload-dlc');
+    
+    if (fileInput.files.length > 0) {
+        const fileName = fileInput.files[0].name;
+        filenameSpan.textContent = fileName;
+        uploadBtn.disabled = false;
+        log(`Selected file: ${fileName}`, 'info');
+    } else {
+        filenameSpan.textContent = '';
+        uploadBtn.disabled = true;
+    }
+});
+
 document.getElementById('btn-upload-dlc').addEventListener('click', async () => {
     const fileInput = document.getElementById('dlc-file');
     const slot = parseInt(document.getElementById('dlc-slot').value);
+    const progressDiv = document.getElementById('dlc-progress');
+    const progressFill = document.getElementById('dlc-progress-fill');
+    const progressText = document.getElementById('dlc-progress-text');
     
     if (!fileInput.files.length) {
         log('Please select a DLC file', 'error');
@@ -435,20 +457,47 @@ document.getElementById('btn-upload-dlc').addEventListener('click', async () => 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     
+    // Show progress bar
+    progressDiv.classList.remove('hidden');
+    progressFill.style.width = '0%';
+    progressText.textContent = '0%';
+    
     try {
+        log(`Uploading DLC to slot ${slot}...`, 'info');
+        
         const response = await fetch(`${API_BASE}/dlc/upload?slot=${slot}`, {
             method: 'POST',
             body: formData
         });
         
+        // Simulate progress (since actual upload progress requires streaming)
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            if (progress < 90) {
+                progress += 10;
+                progressFill.style.width = `${progress}%`;
+                progressText.textContent = `${progress}%`;
+            }
+        }, 500);
+        
         const result = await response.json();
+        clearInterval(progressInterval);
         
         if (response.ok) {
+            progressFill.style.width = '100%';
+            progressText.textContent = '100%';
             log(result.message, 'success');
+            log('Note: Upload takes 3-5 minutes. Use Debug menu to monitor progress.', 'info');
+            
+            // Hide progress after 2 seconds
+            setTimeout(() => {
+                progressDiv.classList.add('hidden');
+            }, 2000);
         } else {
             throw new Error(result.detail || 'Upload failed');
         }
     } catch (error) {
+        progressDiv.classList.add('hidden');
         log(`DLC upload failed: ${error.message}`, 'error');
     }
 });
@@ -456,6 +505,7 @@ document.getElementById('btn-upload-dlc').addEventListener('click', async () => 
 document.getElementById('btn-load-dlc').addEventListener('click', async () => {
     const slot = parseInt(document.getElementById('dlc-slot').value);
     try {
+        log(`Loading DLC from slot ${slot}...`, 'info');
         const result = await apiCall(`/dlc/load/${slot}`, 'POST');
         log(result.message, 'success');
     } catch (error) {
@@ -465,13 +515,15 @@ document.getElementById('btn-load-dlc').addEventListener('click', async () => {
 
 document.getElementById('btn-activate-dlc').addEventListener('click', async () => {
     try {
+        log('Activating DLC...', 'info');
         const result = await apiCall('/dlc/activate', 'POST');
         log(result.message, 'success');
+        log('DLC content now available at action input 75', 'info');
     } catch (error) {
         log(`DLC activation failed: ${error.message}`, 'error');
     }
 });
-*/
+
 
 // Initialize
 updateStatus();
