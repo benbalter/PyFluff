@@ -7,13 +7,15 @@ application to remember previously connected Furbies and provides quick
 access to known devices even when they're in F2F mode.
 """
 
+import asyncio
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
-from pyfluff.models import KnownFurby, KnownFurbiesConfig
+import aiofiles
+
+from pyfluff.models import KnownFurbiesConfig, KnownFurby
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,8 @@ class FurbyCache:
     - Last known names and name IDs
     - Last seen timestamps
     - Firmware versions (when available)
+    
+    Uses async file I/O and debouncing to minimize disk writes.
     """
 
     def __init__(self, cache_file: Path | str = "known_furbies.json") -> None:
@@ -38,15 +42,18 @@ class FurbyCache:
         """
         self.cache_file = Path(cache_file)
         self.config = self._load()
+        self._save_pending = False
+        self._save_task: asyncio.Task[None] | None = None
+        self._save_delay = 1.0  # Debounce delay in seconds
 
     def _load(self) -> KnownFurbiesConfig:
-        """Load cache from disk."""
+        """Load cache from disk (synchronous for initialization)."""
         if not self.cache_file.exists():
             logger.info(f"Cache file not found, creating new cache: {self.cache_file}")
             return KnownFurbiesConfig(furbies={})
 
         try:
-            with open(self.cache_file, "r") as f:
+            with open(self.cache_file) as f:
                 data = json.load(f)
                 config = KnownFurbiesConfig(**data)
                 logger.info(f"Loaded {len(config.furbies)} known Furbies from cache")
@@ -56,23 +63,56 @@ class FurbyCache:
             logger.warning("Starting with empty cache")
             return KnownFurbiesConfig(furbies={})
 
-    def _save(self) -> None:
-        """Save cache to disk."""
+    async def _save_async(self) -> None:
+        """Save cache to disk asynchronously."""
         try:
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.cache_file, "w") as f:
-                json.dump(self.config.model_dump(), f, indent=2)
+            async with aiofiles.open(self.cache_file, "w") as f:
+                await f.write(json.dumps(self.config.model_dump(), indent=2))
             logger.debug(f"Saved cache with {len(self.config.furbies)} Furbies")
         except Exception as e:
             logger.error(f"Failed to save cache file: {e}")
 
+    def _schedule_save(self) -> None:
+        """Schedule a debounced save operation."""
+        if self._save_task is not None and not self._save_task.done():
+            # Cancel existing save task to debounce
+            self._save_task.cancel()
+
+        async def delayed_save() -> None:
+            try:
+                await asyncio.sleep(self._save_delay)
+                await self._save_async()
+                self._save_pending = False
+            except asyncio.CancelledError:
+                pass  # Task was cancelled for debouncing
+
+        self._save_pending = True
+        self._save_task = asyncio.create_task(delayed_save())
+
+    def _save(self) -> None:
+        """Save cache to disk (backward compatible synchronous wrapper)."""
+        # Try to schedule async save if event loop is running
+        try:
+            loop = asyncio.get_running_loop()
+            self._schedule_save()
+        except RuntimeError:
+            # No event loop running, fall back to synchronous save
+            try:
+                self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.cache_file, "w") as f:
+                    json.dump(self.config.model_dump(), f, indent=2)
+                logger.debug(f"Saved cache with {len(self.config.furbies)} Furbies")
+            except Exception as e:
+                logger.error(f"Failed to save cache file: {e}")
+
     def add_or_update(
         self,
         address: str,
-        device_name: Optional[str] = None,
-        name: Optional[str] = None,
-        name_id: Optional[int] = None,
-        firmware_revision: Optional[str] = None,
+        device_name: str | None = None,
+        name: str | None = None,
+        name_id: int | None = None,
+        firmware_revision: str | None = None,
     ) -> KnownFurby:
         """
         Add or update a Furby in the cache.
@@ -92,7 +132,14 @@ class FurbyCache:
             furby = self.config.furbies[address]
             logger.debug(f"Updating existing Furby: {address}")
         else:
-            furby = KnownFurby(address=address, last_seen=time.time())
+            furby = KnownFurby(
+                address=address, 
+                last_seen=time.time(),
+                name=None,
+                name_id=None,
+                device_name=None,
+                firmware_revision=None
+            )
             logger.info(f"Adding new Furby to cache: {address}")
 
         # Update fields (only if new values provided)
@@ -114,7 +161,7 @@ class FurbyCache:
 
         return furby
 
-    def get(self, address: str) -> Optional[KnownFurby]:
+    def get(self, address: str) -> KnownFurby | None:
         """
         Get a Furby from the cache by MAC address.
         
@@ -188,7 +235,7 @@ class FurbyCache:
         else:
             logger.warning(f"Cannot update name for unknown Furby: {address}")
 
-    def get_most_recent(self) -> Optional[KnownFurby]:
+    def get_most_recent(self) -> KnownFurby | None:
         """
         Get the most recently seen Furby.
         
@@ -197,3 +244,16 @@ class FurbyCache:
         """
         furbies = self.get_all()
         return furbies[0] if furbies else None
+
+    async def flush(self) -> None:
+        """
+        Force immediate save to disk.
+        
+        Useful during shutdown or when immediate persistence is required.
+        Waits for any pending save operation to complete.
+        """
+        if self._save_task is not None and not self._save_task.done():
+            # Cancel debounce delay and save immediately
+            self._save_task.cancel()
+        await self._save_async()
+        self._save_pending = False
