@@ -124,3 +124,19 @@ class KnownFurbiesConfig(BaseModel):
     )
 
     model_config = ConfigDict(extra="allow")
+
+
+class HomeAssistantConfig(BaseModel):
+    """Home Assistant MQTT configuration"""
+
+    enabled: bool = Field(default=False, description="Enable Home Assistant integration")
+    broker: str = Field(default="localhost", description="MQTT broker hostname/IP")
+    port: int = Field(default=1883, ge=1, le=65535, description="MQTT broker port")
+    username: str | None = Field(default=None, description="MQTT username (optional)")
+    password: str | None = Field(default=None, description="MQTT password (optional)")
+    device_id: str = Field(
+        default="furby_connect", description="Unique device ID for Home Assistant"
+    )
+    device_name: str = Field(default="Furby Connect", description="Device name in Home Assistant")
+
+    model_config = ConfigDict(extra="allow")

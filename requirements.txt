@@ -18,3 +18,6 @@ python-json-logger>=2.0.7  # JSON log formatter
 httpx>=0.25.0              # Async HTTP client
 rich>=13.7.0               # Beautiful terminal output
 typer>=0.9.0               # CLI framework
+
+# Home Assistant integration
+aiomqtt>=2.0.0             # Async MQTT client for Home Assistant discovery

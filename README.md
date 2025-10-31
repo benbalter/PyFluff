@@ -30,6 +30,7 @@ PyFluff is a complete rewrite of the original [bluefluff](https://github.com/Jei
 * **Bleak BLE Stack**: Well-maintained, cross-platform BLE library
 * **FastAPI Web Server**: Modern async web framework with automatic OpenAPI documentation
 * **WebSocket Support**: Real-time sensor data streaming
+* **Home Assistant Integration**: MQTT Discovery support for seamless smart home integration
 * **Async/Await**: Non-blocking operations throughout
 * **Structured Logging**: JSON-formatted logs for easy parsing
 * **Type Safety**: Full type hints for better IDE support and fewer bugs
@@ -87,6 +88,28 @@ sudo systemctl start bluetooth
 Bluetooth should work out of the box. Ensure Bluetooth is enabled in System Preferences and that your terminal (or your IDE) has Bluetooth permissions when prompted.
 
 ## Usage
+
+### Home Assistant Integration
+
+PyFluff integrates seamlessly with Home Assistant via MQTT Discovery. Enable it with:
+
+```bash
+# Set environment variables
+export HA_ENABLED=true
+export HA_MQTT_BROKER=localhost
+export HA_MQTT_PORT=1883
+
+# Start server
+python -m pyfluff.server
+```
+
+Once connected to Furby, it will automatically appear in Home Assistant with:
+- RGB Light entity (antenna LED)
+- Binary sensor (connection status)
+- Number inputs (mood meters)
+- Buttons (actions like giggle, puke, LCD controls)
+
+See the [Home Assistant Integration Guide](docs/home-assistant.md) for detailed setup and examples.
 
 ### Starting the Server
 
@@ -470,6 +493,7 @@ The service will automatically start on boot and restart on failures.
 
 Thanks to the Bluefluff community, comprehensive protocol documentation is available in the [`docs/`](docs/) directory:
 
+* **[Home Assistant Integration](docs/home-assistant.md)** - Setup and configuration for Home Assistant MQTT Discovery
 * **[Action Reference](docs/actions.md)** - Understanding Furby's action system
   * [Complete Action List](docs/actionlist.md) - All ~1000 actions with transcriptions
   * [Furby Names](docs/names.md) - All 129 possible Furby names
