@@ -6,6 +6,7 @@ Provides HTTP API and WebSocket support for controlling Furby Connect.
 
 import asyncio
 import logging
+import os
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pyfluff.dlc import DLCManager
 from pyfluff.furby import FurbyConnect
 from pyfluff.furby_cache import FurbyCache
+from pyfluff.homeassistant import HomeAssistantMQTT
 from pyfluff.models import (
     ActionList,
     ActionSequence,
@@ -26,6 +28,7 @@ from pyfluff.models import (
     CommandResponse,
     ConnectRequest,
     FurbyStatus,
+    HomeAssistantConfig,
     MoodUpdate,
 )
 from pyfluff.protocol import MoodMeterType
@@ -40,13 +43,14 @@ logger = logging.getLogger(__name__)
 # Global Furby instance and cache
 furby: FurbyConnect | None = None
 furby_cache: FurbyCache | None = None
+ha_mqtt: HomeAssistantMQTT | None = None
 connection_logs: list[WebSocket] = []
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan context manager for FastAPI app."""
-    global furby, furby_cache
+    global furby, furby_cache, ha_mqtt
 
     # Startup: Load cache and prepare for connections
     logger.info("PyFluff server starting up...")
@@ -61,12 +65,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error(f"Failed to initialize cache: {e}")
         furby_cache = FurbyCache()  # Start with empty cache
 
+    # Initialize Home Assistant MQTT if configured
+    ha_config = _load_ha_config()
+    if ha_config.enabled:
+        try:
+            logger.info("Home Assistant integration enabled")
+            ha_mqtt = HomeAssistantMQTT(
+                broker=ha_config.broker,
+                port=ha_config.port,
+                username=ha_config.username,
+                password=ha_config.password,
+                device_id=ha_config.device_id,
+                device_name=ha_config.device_name,
+            )
+            await ha_mqtt.connect()
+            await ha_mqtt.subscribe_to_commands(_handle_ha_command)
+            logger.info("Home Assistant MQTT connected")
+        except Exception as e:
+            logger.error(f"Failed to initialize Home Assistant MQTT: {e}")
+            ha_mqtt = None
+
     logger.info("Server ready. Connect to Furby via the web interface.")
 
     yield
 
-    # Shutdown: Disconnect from Furby
+    # Shutdown: Disconnect from Furby and MQTT
     logger.info("PyFluff server shutting down...")
+
+    if ha_mqtt:
+        try:
+            await ha_mqtt.disconnect()
+        except Exception as e:
+            logger.error(f"Error disconnecting from MQTT: {e}")
+
     if furby and furby.connected:
         try:
             await furby.disconnect()
@@ -97,7 +128,118 @@ if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
 
-# Helper function to check connection
+# Create FastAPI app
+app = FastAPI(
+    title="PyFluff API",
+    description="Modern Python controller for Furby Connect via Bluetooth LE",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files
+web_dir = Path(__file__).parent.parent / "web"
+if web_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+
+
+# Helper functions
+
+
+def _load_ha_config() -> HomeAssistantConfig:
+    """Load Home Assistant configuration from environment variables."""
+    return HomeAssistantConfig(
+        enabled=os.environ.get("HA_ENABLED", "false").lower() == "true",
+        broker=os.environ.get("HA_MQTT_BROKER", "localhost"),
+        port=int(os.environ.get("HA_MQTT_PORT", "1883")),
+        username=os.environ.get("HA_MQTT_USERNAME"),
+        password=os.environ.get("HA_MQTT_PASSWORD"),
+        device_id=os.environ.get("HA_DEVICE_ID", "furby_connect"),
+        device_name=os.environ.get("HA_DEVICE_NAME", "Furby Connect"),
+    )
+
+
+async def _handle_ha_command(topic: str, payload: str) -> None:
+    """
+    Handle MQTT commands from Home Assistant.
+
+    Args:
+        topic: MQTT topic
+        payload: MQTT message payload
+    """
+    global furby
+
+    if not furby or not furby.connected:
+        logger.warning(f"Received HA command but not connected: {topic}")
+        return
+
+    try:
+        # Parse topic to determine command type
+        parts = topic.split("/")
+
+        if "antenna/rgb/set" in topic:
+            # RGB color command: "255,128,0"
+            r, g, b = map(int, payload.split(","))
+            await furby.set_antenna_color(r, g, b)
+            if ha_mqtt:
+                await ha_mqtt.publish_antenna_state(r, g, b, on=True)
+
+        elif "antenna/set" in topic:
+            # On/Off command
+            if payload.upper() == "ON":
+                # Turn on to white
+                await furby.set_antenna_color(255, 255, 255)
+                if ha_mqtt:
+                    await ha_mqtt.publish_antenna_state(255, 255, 255, on=True)
+            else:
+                # Turn off
+                await furby.set_antenna_color(0, 0, 0)
+                if ha_mqtt:
+                    await ha_mqtt.publish_antenna_state(0, 0, 0, on=False)
+
+        elif "mood/" in topic and "/set" in topic:
+            # Mood command
+            mood_type = parts[-2]  # Extract mood type from topic
+            value = int(payload)
+
+            mood_map = {
+                "excitedness": MoodMeterType.EXCITEDNESS,
+                "displeasedness": MoodMeterType.DISPLEASEDNESS,
+                "tiredness": MoodMeterType.TIREDNESS,
+                "fullness": MoodMeterType.FULLNESS,
+                "wellness": MoodMeterType.WELLNESS,
+            }
+
+            if mood_type in mood_map:
+                await furby.set_mood(mood_map[mood_type], value, set_absolute=True)
+                if ha_mqtt:
+                    await ha_mqtt.publish_mood_state(mood_type, value)
+
+        elif "button/" in topic and "/press" in topic:
+            # Button press command
+            button_type = parts[-2]  # Extract button type from topic
+
+            if button_type == "giggle":
+                await furby.trigger_action(55, 2, 14, 0)
+            elif button_type == "puke":
+                await furby.trigger_action(66, 0, 0, 0)
+            elif button_type == "lcd_on":
+                await furby.set_lcd_backlight(True)
+            elif button_type == "lcd_off":
+                await furby.set_lcd_backlight(False)
+
+    except Exception as e:
+        logger.error(f"Error handling HA command {topic}: {e}")
+
+
 def get_furby() -> FurbyConnect:
     """Get connected Furby instance or raise error."""
     if furby is None or not furby.connected:
@@ -270,6 +412,17 @@ async def connect(request: ConnectRequest | None = None) -> CommandResponse:
             # Short pause to let connection stabilize
             await asyncio.sleep(0.5)
 
+            # Publish Home Assistant discovery if enabled
+            if ha_mqtt and ha_mqtt.running:
+                try:
+                    mac_address = furby.device.address if furby.device else None
+                    await ha_mqtt.publish_discovery(mac_address)
+                    await ha_mqtt.publish_connection_state(True)
+                    await broadcast_log("Published to Home Assistant", "success")
+                    logger.info("Published Home Assistant discovery messages")
+                except Exception as e:
+                    logger.warning(f"Could not publish to Home Assistant: {e}")
+
             # Toggle debug menu
             try:
                 await furby.cycle_debug_menu()
@@ -303,6 +456,14 @@ async def disconnect() -> CommandResponse:
     """Disconnect from Furby."""
     fb = get_furby()
     await fb.disconnect()
+
+    # Update HA state
+    if ha_mqtt and ha_mqtt.running:
+        try:
+            await ha_mqtt.publish_connection_state(False)
+        except Exception as e:
+            logger.warning(f"Could not update HA state: {e}")
+
     return CommandResponse(success=True, message="Disconnected")
 
 
@@ -314,6 +475,15 @@ async def set_antenna(color: AntennaColor) -> CommandResponse:
     try:
         await fb.set_antenna_color(color.red, color.green, color.blue)
         logger.info("Antenna color set successfully")
+
+        # Update HA state
+        if ha_mqtt and ha_mqtt.running:
+            try:
+                on_state = not (color.red == 0 and color.green == 0 and color.blue == 0)
+                await ha_mqtt.publish_antenna_state(color.red, color.green, color.blue, on_state)
+            except Exception as e:
+                logger.warning(f"Could not update HA state: {e}")
+
         return CommandResponse(
             success=True,
             message=f"Antenna color set to RGB({color.red}, {color.green}, {color.blue})",
@@ -447,6 +617,13 @@ async def set_mood(mood: MoodUpdate) -> CommandResponse:
 
     set_absolute = mood.action.lower() == "set"
     await fb.set_mood(mood_type, mood.value, set_absolute)
+
+    # Update HA state
+    if ha_mqtt and ha_mqtt.running and set_absolute:
+        try:
+            await ha_mqtt.publish_mood_state(mood.type.lower(), mood.value)
+        except Exception as e:
+            logger.warning(f"Could not update HA state: {e}")
 
     return CommandResponse(
         success=True,
