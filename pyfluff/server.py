@@ -128,29 +128,6 @@ if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
 
-# Create FastAPI app
-app = FastAPI(
-    title="PyFluff API",
-    description="Modern Python controller for Furby Connect via Bluetooth LE",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Mount static files
-web_dir = Path(__file__).parent.parent / "web"
-if web_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
-
-
 # Helper functions
 
 
