@@ -167,6 +167,40 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- DLC Management -->
+                <section class="card card-compact">
+                    <h2>DLC Management</h2>
+                    <div class="dlc-controls">
+                        <div class="dlc-upload-section">
+                            <input type="file" id="dlc-file" accept=".dlc,.DLC" style="display: none;">
+                            <button id="btn-select-dlc" class="btn btn-secondary btn-sm">Select DLC File</button>
+                            <span id="dlc-filename" class="dlc-filename"></span>
+                        </div>
+                        <div class="dlc-slot-section">
+                            <label for="dlc-slot">Slot:</label>
+                            <select id="dlc-slot" class="dlc-slot-select">
+                                <option value="0">Slot 0 (2M)</option>
+                                <option value="1">Slot 1 (1M)</option>
+                                <option value="2" selected>Slot 2 (.5M)</option>
+                            </select>
+                        </div>
+                        <div class="dlc-button-group">
+                            <button id="btn-upload-dlc" class="btn btn-primary btn-sm" disabled>Upload</button>
+                            <button id="btn-load-dlc" class="btn btn-action btn-sm">Load</button>
+                            <button id="btn-activate-dlc" class="btn btn-action btn-sm">Activate</button>
+                        </div>
+                        <div id="dlc-progress" class="dlc-progress hidden">
+                            <div class="progress-bar">
+                                <div id="dlc-progress-fill" class="progress-fill"></div>
+                            </div>
+                            <span id="dlc-progress-text" class="progress-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="dlc-info">
+                        <small>💡 Tip: Use <code>scripts/create_copilot_dlc.py</code> for help creating custom DLC files with the Copilot logo</small>
+                    </div>
+                </section>
             </div>
 
             <!-- Log -->
